@@ -246,7 +246,7 @@ class Button(wx.Control):
 
 app = wx.App()
 
-frame = MyFrame(None, 'Image Test')
+frame = MyFrame(None, 'Mooltipass GUI')
 
 frame.Show()
 
