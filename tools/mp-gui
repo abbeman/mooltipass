@@ -5,28 +5,65 @@ class MyFrame(wx.Frame):
     def __init__(self, parent, title):
         super(MyFrame, self).__init__(parent, title = title)
         self.SetBackgroundColour("#000000")
-        #self.mousePos = wx.Point(-1, -1)
-        #self.Bind(wx.EVT_PAINT, self.onPaint)
-        #self.Bind(wx.EVT_MOTION, self.onMotion)
-        mainSizer = wx.BoxSizer(wx.VERTICAL)
+        mainSizer = wx.GridBagSizer(0, 0)
         self.SetSizer(mainSizer)
 
-        lineSizer = wx.BoxSizer(wx.HORIZONTAL)
-        mainSizer.Add(lineSizer, 1, wx.EXPAND | wx.ALL, 2)
-        lineSizer.Add(Button(self, (50, 40)), 1, wx.SHAPED | wx.ALL, 2)
-        lineSizer.Add(Button(self, (50, 40)), 1, wx.SHAPED | wx.ALL, 2)
-        lineSizer.Add(Button(self, (50, 40)), 1, wx.SHAPED | wx.ALL, 2)
-        lineSizer.Add(Button(self, (50, 40)), 1, wx.SHAPED | wx.ALL, 2)
-        lineSizer.Add(Button(self, (50, 40)), 1, wx.SHAPED | wx.ALL, 2)
+        mainSizer.Add(self.createButton(50, 30, "button1"), pos = (1, 0), flag = wx.SHAPED | wx.ALL | wx.ALIGN_CENTER_VERTICAL)
+        touchPad = TouchPad(self, (100, 100))
+        touchPad.Bind(wx.EVT_LEFT_DOWN, self.onTouchPadPress)
+        touchPad.Bind(wx.EVT_LEFT_UP, self.onTouchPadRelease)
+        touchPad.Bind(wx.EVT_MOTION, self.onTouchPadMotion)
+        mainSizer.Add(touchPad, pos = (0, 1), span = (3, 3), flag = wx.SHAPED | wx.ALL | wx.ALIGN_CENTER_HORIZONTAL | wx.ALIGN_CENTER_VERTICAL)
+        mainSizer.Add(self.createButton(50, 30, "button2"), pos = (1, 4), flag = wx.SHAPED | wx.ALL | wx.ALIGN_CENTER_HORIZONTAL | wx.ALIGN_CENTER_VERTICAL)
 
-        lineSizer = wx.BoxSizer(wx.HORIZONTAL)
-        mainSizer.Add(lineSizer, 1, wx.EXPAND | wx.ALL, 2)
-        lineSizer.Add(Button(self, (50, 40)), 1, wx.SHAPED | wx.ALL | wx.ALIGN_BOTTOM, 2)
-        lineSizer.Add(TouchPad(self, (100, 100)), 1, wx.SHAPED | wx.ALL | wx.ALIGN_CENTER_HORIZONTAL, 2)
-        lineSizer.Add(Button(self, (50, 40)), 1, wx.SHAPED | wx.ALL | wx.ALIGN_BOTTOM, 2)
+        for i in range(3):
+            mainSizer.AddGrowableRow(i)
+        for i in range(5):
+            mainSizer.AddGrowableCol(i)
+
+        self.SetClientSize((400, 200))
+
+    def createButton(self, width, height, name):
+        button = Button(self, (width, height), name)
+        button.Bind(wx.EVT_LEFT_DOWN, self.onButtonPress)
+        button.Bind(wx.EVT_LEFT_UP, self.onButtonRelease)
+        return button
+
+    def onTouchPadPress(self, ev):
+        width, height = ev.GetEventObject().GetClientSize()
+        x, y = ev.GetPosition()
+        print("Touch pad pressed: %.2f, %.2f" % (float(x)/width, float(y)/height))
+        ev.Skip()
+
+    def onTouchPadRelease(self, ev):
+        width, height = ev.GetEventObject().GetClientSize()
+        x, y = ev.GetPosition()
+        print("Touch pad released: %.2f, %.2f" % (float(x)/width, float(y)/height))
+        ev.Skip()
+
+    def onTouchPadMotion(self, ev):
+        if not ev.LeftIsDown():
+            return
+
+        width, height = ev.GetEventObject().GetClientSize()
+        x, y = ev.GetPosition()
+        print("Touch pad motion: %.2f, %.2f" % (float(x)/width, float(y)/height))
+        ev.Skip()
+
+    def onButtonPress(self, ev):
+        print("Button '%s' pressed!" % ev.GetEventObject().GetName())
+        # Make sure the original event handler is called too, which highlights
+        # the button while pressed.
+        ev.Skip()
+
+    def onButtonRelease(self, ev):
+        print("Button '%s' released!" % ev.GetEventObject().GetName())
+        # Make sure the original event handler is called too, which highlights
+        # the button while pressed.
+        ev.Skip()
 
 class TouchSpot:
-    FADE_STEP_COUNT = 5
+    FADE_STEP_COUNT = 10
 
     def __init__(self, point = None):
         self.position = point
@@ -48,95 +85,93 @@ class TouchPad(wx.Control):
     def __init__(self, parent, size):
         self._aspect = 1
         wx.Window.__init__(self, parent=parent, size=size)
-        self.fadeSpots = []
-        self.currentSpot = None
+        self.spots = []
 
         self.Bind(wx.EVT_PAINT, self.onPaint)
         self.Bind(wx.EVT_ERASE_BACKGROUND, self.onEraseBackground)
 
         self.Bind(wx.EVT_LEFT_DOWN, self.onPress)
         self.Bind(wx.EVT_LEFT_DCLICK, self.onPress)
-        self.Bind(wx.EVT_LEFT_UP, self.onRelease)
         self.Bind(wx.EVT_MOTION, self.onMotion)
-        self.Bind(wx.EVT_LEAVE_WINDOW, self.onLeave)
         self.Bind(wx.EVT_SIZE, self.onSizeChange)
 
         self.timer = wx.Timer(self)
         self.Bind(wx.EVT_TIMER, self.onUpdateSpotsEvent)
         self.timer.Start(self.TIMER_INTERVAL)
 
+    def addSpot(self, position):
+        self.spots.append(TouchSpot(position))
+        if not self.timer.IsRunning():
+            self.timer.Start(self.TIMER_INTERVAL)
+        self.Refresh()
+
     def onUpdateSpotsEvent(self, ev):
         self.updateTouchSpots()
 
     def updateTouchSpots(self):
-        for i in range(len(self.fadeSpots)-1, -1, -1):
-            spot = self.fadeSpots[i]
+        # Loop through the spots backwards, since we'll be removing spots.
+        for i in range(len(self.spots)-1, -1, -1):
+            spot = self.spots[i]
             if not spot.update():
-                self.fadeSpots.remove(spot)
-        self.paintTouchPad(wx.BufferedDC(wx.ClientDC(self)))
+                self.spots.remove(spot)
 
-        if self.timer.IsRunning() and len(self.fadeSpots) <= 0 and not self.currentSpot:
+        self.Refresh()
+
+        if self.timer.IsRunning() and len(self.spots) <= 0:
             self.timer.Stop()
 
     def onPress(self, ev):
-        self.currentSpot = TouchSpot(ev.GetPosition())
-        if not self.timer.IsRunning():
-            self.timer.Start(self.TIMER_INTERVAL)
-        self.paintTouchPad(wx.BufferedDC(wx.ClientDC(self)))
-
-    def onRelease(self, ev):
-        if self.currentSpot:
-            self.fadeSpots.append(self.currentSpot)
-            self.currentSpot = None
-        if not self.timer.IsRunning():
-            self.timer.Start(self.TIMER_INTERVAL)
-        self.paintTouchPad(wx.BufferedDC(wx.ClientDC(self)))
+        self.addSpot(ev.GetPosition())
 
     def onMotion(self, ev):
         if not ev.LeftIsDown():
             return
 
-        if self.currentSpot:
-            self.fadeSpots.append(self.currentSpot)
-            self.currentSpot = TouchSpot(ev.GetPosition())
-
-        if not self.timer.IsRunning():
-            self.timer.Start(self.TIMER_INTERVAL)
-        self.paintTouchPad(wx.BufferedDC(wx.ClientDC(self)))
+        self.addSpot(ev.GetPosition())
 
     def onPaint(self, ev):
-        self.paintTouchPad(wx.BufferedPaintDC(self))
-
-    def onLeave(self, ev):
-        self.currentPoint = None
-        self.paintTouchPad(wx.BufferedDC(wx.ClientDC(self)))
+        self.paintTouchPad()
 
     def onSizeChange(self, ev):
-        self.paintTouchPad(wx.BufferedDC(wx.ClientDC(self)))
+        self.Refresh()
 
-    def paintTouchPad(self, dc):
+    def paintTouchPad(self):
+        dc = wx.BufferedPaintDC(self)
         width, height = self.GetClientSize()
         dc.SetBackground(wx.Brush("#000000"))
         dc.SetBrush(wx.Brush("#000000", wx.TRANSPARENT))
         dc.Clear()
 
-        for spot in self.fadeSpots:
-            color = wx.Colour(0x45 / TouchSpot.FADE_STEP_COUNT * spot.fadeState,
-                              0x45 / TouchSpot.FADE_STEP_COUNT * spot.fadeState,
-                              0xdc / TouchSpot.FADE_STEP_COUNT * spot.fadeState)
-            dc.SetPen(wx.Pen(color, 1, wx.SOLID))
-            dc.DrawCircle(spot.position.x, spot.position.y, 5)
+        for i in range(len(self.spots)):
+            spot = self.spots[i]
+            color = wx.Colour(0x55 / TouchSpot.FADE_STEP_COUNT * spot.fadeState,
+                              0x55 / TouchSpot.FADE_STEP_COUNT * spot.fadeState,
+                              0xec / TouchSpot.FADE_STEP_COUNT * spot.fadeState)
+            dc.SetPen(wx.Pen(color, 3, wx.SOLID))
+            if i < len(self.spots)-1:
+                nextSpot = self.spots[i+1]
+                dc.DrawLine(spot.position.x, spot.position.y, nextSpot.position.x, nextSpot.position.y)
+            else:
+                dc.DrawPoint(spot.position.x, spot.position.y)
 
-        lineOffset = width/10
-        lineWidth = 5
-        arcGap = width/10
-        pen = wx.Pen("#4545dc", lineWidth, wx.SOLID)
+        # Draw the arcs making up the broken circle highlight of the front
+        # panel.
+        r = height/2 - height/15
+        cx = width/2
+        cy = height/2
+        arcWidth = 5
+        arcGap = width/30
+        pen = wx.Pen("#4545dc", arcWidth, wx.SOLID)
         pen.SetCap(wx.CAP_BUTT)
         dc.SetPen(pen)
-        dc.DrawArc(width-lineOffset, height/2-arcGap/2, width/2+arcGap/2, lineOffset, width/2, height/2)
-        dc.DrawArc(width/2-arcGap/2, lineOffset, lineOffset, height/2-arcGap/2, width/2, height/2)
-        dc.DrawArc(lineOffset, height/2+arcGap/2, width/2-arcGap/2, height-lineOffset, width/2, height/2)
-        dc.DrawArc(width/2+arcGap/2, height-lineOffset, width-lineOffset, height/2+arcGap/2, width/2, height/2)
+        # Draw top right arc.
+        dc.DrawArc(cx + r, cy - arcGap, cx + arcGap, cy - r, cx, cy)
+        # Draw top left arc.
+        dc.DrawArc(cx - arcGap, cy - r, cx - r, cy - arcGap, cx, cy)
+        # Draw bottom left arc.
+        dc.DrawArc(cx - r, cy + arcGap, cx - arcGap, cy + r, cx, cy)
+        # Draw bottom right arc.
+        dc.DrawArc(cx + arcGap, cy + r, cx + r, cy + arcGap, cx, cy)
 
 
     def onEraseBackground(self, ev):
@@ -148,9 +183,9 @@ class Button(wx.Control):
     HOVER = 1
     CLICK = 2
     STYLE_COUNT = 3
-    def __init__(self, parent, size):
+    def __init__(self, parent, size, name = ""):
         self._aspect = 1.5
-        wx.Window.__init__(self, parent=parent, size=size)
+        wx.Window.__init__(self, parent=parent, size=size, name=name)
         self.initializeBitmaps()
 
         self.Bind(wx.EVT_PAINT, self.onPaint)
@@ -167,16 +202,17 @@ class Button(wx.Control):
 
     def onEnter(self, ev):
         self.state = self.HOVER
-        self.paintButton(wx.BufferedDC(wx.ClientDC(self)))
+        self.Refresh()
 
     def onLeave(self, ev):
         self.state = self.NORMAL
-        self.paintButton(wx.BufferedDC(wx.ClientDC(self)))
+        self.Refresh()
 
     def onPaint(self, ev):
-        self.paintButton(wx.BufferedPaintDC(self))
+        self.paintButton()
 
-    def paintButton(self, dc):
+    def paintButton(self):
+        dc = wx.BufferedPaintDC(self)
         width, height = self.GetClientSize()
         srcDC = wx.MemoryDC()
         srcDC.SelectObject(self.bitmaps[self.state])
@@ -187,16 +223,16 @@ class Button(wx.Control):
 
     def onPress(self, ev):
         self.state = self.CLICK
-        self.paintButton(wx.BufferedDC(wx.ClientDC(self)))
+        self.Refresh()
 
     def onRelease(self, ev):
         if self.state == self.CLICK:
             self.state = self.HOVER
-        self.paintButton(wx.BufferedDC(wx.ClientDC(self)))
+        self.Refresh()
 
     def onSizeChange(self, ev):
         self.initializeBitmaps()
-        self.paintButton(wx.BufferedDC(wx.ClientDC(self)))
+        self.Refresh()
 
     def initializeBitmaps(self):
         width, height = self.GetClientSize()
@@ -207,7 +243,7 @@ class Button(wx.Control):
         self.bitmaps[self.HOVER]  = wx.EmptyBitmap(width, height)
         self.bitmaps[self.CLICK]  = wx.EmptyBitmap(width, height)
 
-        lineOffset = width/10
+        lineOffset = width/6
         lineWidth = 5
 
         rect = wx.Rect(0, 0, width, height)
